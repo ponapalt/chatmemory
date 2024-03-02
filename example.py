@@ -1,10 +1,14 @@
+import os
 from datetime import datetime
 from openai import OpenAI
+from dotenv import load_dotenv
 
 client = OpenAI()
 from chatmemory.client import ChatMemoryClient
 
-OPENAI_APIKEY = "YOUR_API_KEY"
+load_dotenv(override=True)
+
+OPENAI_APIKEY = os.environ.get("OPENAI_APIKEY")
 
 system_content = f"""* 人物：アイドル
 * 性格：恥ずかしがり屋で内気な一面があるが、丁寧で礼儀正しい。一途で愛情深く、相手を思いやる優しい性格。

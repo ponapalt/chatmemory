@@ -1,9 +1,12 @@
 import os
 from argparse import ArgumentParser
 import logging
+from dotenv import load_dotenv
 from .server import ChatMemoryServer
 
 def main():
+    load_dotenv(override=True)
+
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     log_format = logging.Formatter("%(asctime)s %(levelname)8s %(message)s")

@@ -4,3 +4,4 @@ requests==2.31.0
 SQLAlchemy==2.0.27
 uvicorn==0.27.1
 pycryptodome==3.20.0
+python-dotenv==1.0.1

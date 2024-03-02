@@ -1,7 +1,11 @@
+import os
 import logging
 from chatmemory.server import ChatMemoryServer
+from dotenv import load_dotenv
 
-OPENAI_APIKEY = "YOUR_API_KEY"
+load_dotenv(override=True)
+
+OPENAI_APIKEY = os.environ.get("OPENAI_APIKEY")
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
