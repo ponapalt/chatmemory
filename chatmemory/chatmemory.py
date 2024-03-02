@@ -7,7 +7,9 @@ from logging import getLogger, NullHandler
 import traceback
 from sqlalchemy import Column, Integer, String, DateTime, Date
 from sqlalchemy.orm import Session, declarative_base
-from openai import ChatCompletion
+from openai import OpenAI
+
+client = OpenAI()
 from Crypto.Cipher import AES
 
 
@@ -82,13 +84,11 @@ class HistoryArchiver:
             }
         }]
 
-        resp = ChatCompletion.create(
-            api_key=self.api_key,
-            model=self.model,
-            messages=histories,
-            functions=functions,
-            function_call={"name": "save_summarized_histories"}
-        )
+        resp = client.chat.completions.create(api_key=self.api_key,
+        model=self.model,
+        messages=histories,
+        functions=functions,
+        function_call={"name": "save_summarized_histories"})
 
         try:
             return json.loads(resp["choices"][0]["message"]["function_call"]["arguments"])["summarized_text"]
@@ -143,13 +143,11 @@ class EntityExtractor:
             }
         }]
 
-        resp = ChatCompletion.create(
-            api_key=self.api_key,
-            model=self.model,
-            messages=histories,
-            functions=functions,
-            function_call={"name": "save_entities"}
-        )
+        resp = client.chat.completions.create(api_key=self.api_key,
+        model=self.model,
+        messages=histories,
+        functions=functions,
+        function_call={"name": "save_entities"})
 
         try:
             return {
