@@ -9,9 +9,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Date
 from sqlalchemy.orm import Session, declarative_base
 from openai import OpenAI
 
-client = OpenAI()
 from Crypto.Cipher import AES
-
 
 logger = getLogger(__name__)
 logger.addHandler(NullHandler())
@@ -84,8 +82,8 @@ class HistoryArchiver:
             }
         }]
 
-        resp = client.chat.completions.create(api_key=self.api_key,
-        model=self.model,
+        client = OpenAI(api_key=self.api_key)
+        resp = client.chat.completions.create(model=self.model,
         messages=histories,
         functions=functions,
         function_call={"name": "save_summarized_histories"})
@@ -143,8 +141,8 @@ class EntityExtractor:
             }
         }]
 
-        resp = client.chat.completions.create(api_key=self.api_key,
-        model=self.model,
+        client = OpenAI(api_key=self.api_key)
+        resp = client.chat.completions.create(model=self.model,
         messages=histories,
         functions=functions,
         function_call={"name": "save_entities"})

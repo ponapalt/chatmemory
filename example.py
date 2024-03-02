@@ -2,8 +2,6 @@ import os
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
-
-client = OpenAI()
 from chatmemory.client import ChatMemoryClient
 
 load_dotenv(override=True)
@@ -45,8 +43,9 @@ while True:
         if not u:
             break
         messages.append({"role": "user", "content": u})
-        resp = client.chat.completions.create(api_key=OPENAI_APIKEY,
-        model="gpt-3.5-turbo",
+
+        client = OpenAI(api_key=OPENAI_APIKEY)
+        resp = client.chat.completions.create(model="gpt-3.5-turbo",
         messages=messages)
         a = resp["choices"][0]["message"]["content"]
         print("assistant> " + a)
