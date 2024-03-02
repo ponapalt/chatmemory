@@ -39,7 +39,7 @@ def db_session():
     Base.metadata.drop_all(bind=engine)
 
 
-@patch("openai.ChatCompletion.create", return_value=mocked_response)
+@patch("openai.resources.chat.Completions.create", return_value=mocked_response)
 def test_chat_memory(mocked_create, db_session):
     chat_memory = ChatMemory(api_key="fake_key")
 

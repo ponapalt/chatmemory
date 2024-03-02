@@ -1,5 +1,7 @@
 from datetime import datetime
-from openai import ChatCompletion
+from openai import OpenAI
+
+client = OpenAI()
 from chatmemory.client import ChatMemoryClient
 
 OPENAI_APIKEY = "YOUR_API_KEY"
@@ -39,11 +41,9 @@ while True:
         if not u:
             break
         messages.append({"role": "user", "content": u})
-        resp = ChatCompletion.create(
-            api_key=OPENAI_APIKEY,
-            model="gpt-3.5-turbo-0613",
-            messages=messages,
-        )
+        resp = client.chat.completions.create(api_key=OPENAI_APIKEY,
+        model="gpt-3.5-turbo-0613",
+        messages=messages)
         a = resp["choices"][0]["message"]["content"]
         print("assistant> " + a)
         messages.append({"role": "assistant", "content": a})
