@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime, date, time, timedelta, timezone
 import base64
 import json
@@ -66,39 +67,50 @@ class HistoryArchiver:
         histories = [
             {"role": "user", "content": self.archive_prompt.format(archive_length=self.archive_length, histories_text=histories_text)}
         ]
-
-        functions = [{
-            "name": "save_summarized_histories",
-            "description": "Summarize the content of the conversation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "summarized_text": {
-                        "type": "string",
-                        "description": "要約した会話の内容"
-                    }
-                },
-                "required": ["summarized_text"]
+        tools = [{
+            'type': 'function',
+            'function': {
+                'name': 'save_summarized_histories',
+                'description': 'Summarize the content of the conversation.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        'summarized_text': {
+                            'type': 'string',
+                            'description': '要約した会話の内容'
+                        }
+                    },
+                    'required': ['summarized_text']
+                }
             }
         }]
 
         client = OpenAI(api_key=self.api_key)
-        resp = client.chat.completions.create(model=self.model,
-        messages=histories,
-        functions=functions,
-        function_call={"name": "save_summarized_histories"})
 
-        try:
-            return json.loads(resp["choices"][0]["message"]["function_call"]["arguments"])["summarized_text"]
+        parameters = {
+            'messages': histories,
+            'model':self.model,
+            'temperature':0.2,
+            'frequency_penalty':0.5,
+            'tools':tools,
+            'tool_choice':{'type': 'function', 'function': {'name': 'save_summarized_histories'}},
+        }
+        resp = client.chat.completions.create(**parameters)
+        tool_calls = resp.choices[0].message.tool_calls
 
-        except json.decoder.JSONDecodeError:
-            logger.warning(f"Retry parsing JSON: {resp}")
-            jstr = resp["choices"][0]["message"]["function_call"]["arguments"].replace("\",\n}", "\"\n}")
-            return json.loads(jstr)["summarized_text"]
+        if tool_calls:
+            for tool_call in tool_calls:
+                try:
+                    return json.loads(tool_call.function.arguments)['summarized_text']
 
-        except Exception as ex:
-            logger.error(f"Invalid response form ChatGPT at archive: {resp}\n{ex}\n{traceback.format_exc()}")
-            raise ex
+                except json.decoder.JSONDecodeError:
+                    logger.warning(f"Retry parsing JSON: {tool_call.function.arguments}")
+                    jstr = tool_call.function.arguments.replace("\",\n}", "\"\n}")
+                    return json.loads(jstr)["summarized_text"]
+
+                except Exception as ex:
+                    logger.error(f"Invalid response form ChatGPT at archive: {resp}\n{ex}\n{traceback.format_exc()}")
+                    raise ex
 
 
 class EntityExtractor:
@@ -121,50 +133,72 @@ class EntityExtractor:
 
         histories.append({"role": "user", "content": prompt})
 
-        functions = [{
-            "name": "save_entities",
-            "description": "Extract and save any information that should be remembered about the user.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "entities": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "name": {"type": "string", "description": "name of entity. use snake case.", "examples": ["birthday_date"]},
-                                "value": {"type": "string"}
+        tools = [{
+            'type': 'function',
+            'function': {
+                'name': 'save_entities',
+                'description': 'Extract and save any information that should be remembered about the user.',
+                'parameters': {
+                    'type': 'object',
+                    'properties': {
+                        "entities": {
+                            "type": "array",
+                            "description": "An array of pairs of information to be remembered about the user. An array of name/value pairs. Multiple pairs are allowed.",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "name": {"type": "string", "description": "name of entity. use snake case.", "examples": ["birthday_date"]},
+                                    "value": {"type": "string"}
+                                }
                             }
                         }
-                    }
+                    },
+                    'required': ['entities']
                 }
             }
         }]
 
         client = OpenAI(api_key=self.api_key)
-        resp = client.chat.completions.create(model=self.model,
-        messages=histories,
-        functions=functions,
-        function_call={"name": "save_entities"})
 
-        try:
-            return {
-                e["name"]: e["value"] for e
-                in json.loads(
-                    resp["choices"][0]["message"]["function_call"]["arguments"]
-                ).get("entities") or []
-            }
-        
-        except json.decoder.JSONDecodeError:
-            logger.warning(f"Retry parsing JSON: {resp}")
-            jstr = resp["choices"][0]["message"]["function_call"]["arguments"].replace("\",\n}", "\"\n}")
-            return {
-                e["name"]: e["value"] for e in json.loads(jstr).get("entities") or []
-            }
+        parameters = {
+            'messages': histories,
+            'model':self.model,
+            'temperature':0.2,
+            'frequency_penalty':0.5,
+            'tools':tools,
+            'tool_choice':{'type': 'function', 'function': {'name': 'save_entities'}},
+        }
 
-        except Exception as ex:
-            logger.error(f"Invalid response form ChatGPT at extract: {resp}\n{ex}\n{traceback.format_exc()}")
-            raise ex
+        resp = client.chat.completions.create(**parameters)
+        tool_calls = resp.choices[0].message.tool_calls
+
+        if tool_calls:
+            for tool_call in tool_calls:
+                try:
+                    json_data = json.loads(tool_call.function.arguments)
+                    keyword = {}
+
+                    if 'entities' in json_data:
+                        json_data = json_data['entities']
+
+                    for item in json_data:
+                        # 'name' と 'value' キーを持つ辞書を {key: value} 形式に変換
+                        if 'name' in item and 'value' in item:
+                            keyword[item['name']] = item['value']
+                        # すでに {key: value} 形式の場合はそのまま追加
+                        elif len(item) == 1:
+                            key, value = next(iter(item.items()))
+                            keyword[key] = value
+
+                    keyword = {re.sub(r'[\r\n\t\s]+', ' ', key).strip() : re.sub(r'[\r\n\t\s]+', ' ', value).strip()
+                                for key, value in keyword.items() if value is not None}
+                    keyword = {key: value for key, value in keyword.items() if key != "" and value != ""}
+
+                    return keyword
+
+                except Exception as ex:
+                    logger.error(f"Invalid response form ChatGPT at archive: {resp}\n{ex}\n{traceback.format_exc()}")
+                    raise ex
 
 
 # Memory manager
