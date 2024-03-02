@@ -42,7 +42,7 @@ while True:
             break
         messages.append({"role": "user", "content": u})
         resp = client.chat.completions.create(api_key=OPENAI_APIKEY,
-        model="gpt-3.5-turbo-0613",
+        model="gpt-3.5-turbo",
         messages=messages)
         a = resp["choices"][0]["message"]["content"]
         print("assistant> " + a)
