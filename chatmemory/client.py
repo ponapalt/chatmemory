@@ -2,18 +2,17 @@ import json
 import requests
 
 class ChatMemoryClient:
-    ARCHIVE_TEMPLATE = """以下はここ5日間にあったユーザーとの会話を要約したものです。
+    ARCHIVE_TEMPLATE = """
+# Summary of your conversations with users in the past
+Below is a summary of a conversation you had with a user over the last five days.
 ```
 {archives_str}
 ```
-
-基本的にこの会話の情報を利用する必要はありませんが、会話の流れでこれらの情報が必要になった場合は利用してください。
+Basically, there is no need to use the information from this conversation, but if you need this information in the course of a conversation, please use it.
 """
     ENTITIES_TEMPLATE = """
-
-# ユーザーに関して会話を通じて聞き出したこと
-
-以下はユーザーとの会話を通じてあなたが記憶している内容です。強く意識する必要はありませんが、会話の流れでこれらの情報が必要になった場合はこれらの情報を会話に利用してください。
+# What you have learned about the user through our conversations
+Below is what you remember through your conversation with the user. You do not need to be strongly aware of this information, but if you need this information in the course of the conversation, please use this information in your conversation.
 
 ```
 {entities_str}
