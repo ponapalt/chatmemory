@@ -76,6 +76,10 @@ class ChatMemoryServer:
     def setup_handlers(self):
         app = self.app
 
+        @app.get("/ping", response_model=ApiResponse, tags=["Ping"])
+        async def ping():
+            return ApiResponse(message="pong")
+
         @app.post("/histories/{user_id}", response_model=ApiResponse, tags=["History"])
         async def add_histories(user_id: str, request: HistoriesRequest, encryption_key: str = Header(default=None), db: Session = Depends(self.get_db)):
             try:
