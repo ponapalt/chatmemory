@@ -27,6 +27,23 @@ Below is what you remember through your conversation with the user. You do not n
 
     def add_histories(self, user_id: str, messages: list):
         requests.post(f"{self.url}/histories/{user_id}", json={"messages": messages})
+    
+    def get_histories(self, user_id: str, since: str = None, until: str = None):
+        url = f"{self.url}/histories/{user_id}"
+        param = ''
+        if since is not None:
+            param += f"since={since}"
+        if until is not None:
+            if len(param) > 0:
+                param += "&"
+            param += f"until={until}"
+
+        if len(param) > 0:
+            url += "?"
+            url += param
+            
+        result = requests.get(url=url)
+        return result.json()["messages"]
 
     def get_archived_histories(self, user_id: str) -> list:
         return requests.get(f"{self.url}/archives/{user_id}").json()["archives"]
