@@ -11,7 +11,7 @@ setup(
     description="Long-term and medium-term memories between you and chatbot💕",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    install_requires=["fastapi==0.110.0", "openai==1.14.2", "requests==2.31.0", "SQLAlchemy==2.0.29", "uvicorn==0.29.0", "pycryptodome==3.20.0"],
+    install_requires=["fastapi==0.110.1", "openai==1.17.1", "requests==2.31.0", "SQLAlchemy==2.0.29", "uvicorn==0.29.0", "pycryptodome==3.20.0"],
     license="Apache v2",
     packages=["chatmemory"],
     classifiers=[
