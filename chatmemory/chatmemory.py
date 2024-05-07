@@ -187,9 +187,12 @@ class EntityExtractor:
                             keyword[item['name']] = item['value']
                         # すでに {key: value} 形式の場合はそのまま追加
                         elif len(item) == 1:
-                            key, value = next(iter(item.items()))
-                            keyword[key] = value
-
+                            try:
+                                key, value = next(iter(item.items()))
+                                keyword[key] = value
+                            except Exception as ex:
+                                logger.error(f"Invalid response form ChatGPT at archive: {item}\n{ex}\n{traceback.format_exc()}")
+                            
                     keyword = {re.sub(r'[\r\n\t\s]+', ' ', key).strip() : re.sub(r'[\r\n\t\s]+', ' ', value).strip()
                                 for key, value in keyword.items() if value is not None}
                     keyword = {key: value for key, value in keyword.items() if key != "" and value != ""}
