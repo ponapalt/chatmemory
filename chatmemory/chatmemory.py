@@ -4,7 +4,7 @@ from datetime import datetime, date, time, timedelta, timezone
 import base64
 import json
 import hashlib
-from logging import getLogger, NullHandler
+from logging import getLogger, NullHandler, INFO
 import traceback
 from sqlalchemy import Column, Integer, String, DateTime, Date
 from sqlalchemy.orm import Session, declarative_base
@@ -14,7 +14,7 @@ from Crypto.Cipher import AES
 
 logger = getLogger(__name__)
 logger.addHandler(NullHandler())
-
+logger.setLevel(INFO)
 
 # Models
 Base = declarative_base()
@@ -332,6 +332,8 @@ class ChatMemory:
         new_entities = self.entity_extractor.extract(conversation_history, entities_json)
         for k, v in new_entities.items():
             entities_json[k] = v
+
+        logger.info(f"Entities extracted : {str(new_entities)}")
         
         now = datetime.utcnow()
         self.save_entities(session, user_id, now, now.date(), entities_json, password)
