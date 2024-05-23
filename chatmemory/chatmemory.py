@@ -114,7 +114,7 @@ class HistoryArchiver:
 
 
 class EntityExtractor:
-    PROMPT_EN = "You are long-term memory extractor system from user and assistant(AI) conversation log. From the conversation history, please extract any information that should be remembered about the user, paying full attention from the past to the latest logs, then output using save_entities tool. If there are already stored information, you can overwrite the new information with the same item key."
+    PROMPT_EN = "You are long-term memory extractor system from user and assistant(AI) conversation log. From the conversation history, please extract any information that should be remembered **about the user**, paying full attention from the past to the latest user logs, then output using save_entities tool. If there are already stored information, you can overwrite the new information with the same item key."
     PROMPT_JA = "会話の履歴の中から、ユーザーに関して覚えておくべき情報があれば抽出してください。既に記憶している項目があれば、同じ項目名を使用して新しい情報で上書きします。"
 
     def __init__(self, api_key: str, model: str="gpt-3.5-turbo", prompt: str=PROMPT_EN):
