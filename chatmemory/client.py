@@ -1,5 +1,7 @@
 import json
 import requests
+import typing
+import datetime
 
 class ChatMemoryClient:
     ARCHIVE_TEMPLATE = """
@@ -28,25 +30,34 @@ Below is what you remember through your conversation with the user. You do not n
     def add_histories(self, user_id: str, messages: list):
         requests.post(f"{self.url}/histories/{user_id}", json={"messages": messages})
     
-    def get_histories(self, user_id: str, since: str = None, until: str = None):
-        url = f"{self.url}/histories/{user_id}"
-        param = ''
+    def get_histories(self, user_id: str,
+                        since: typing.Optional[datetime.date]=None,
+                        until: typing.Optional[datetime.date]=None) -> list:
+        
+        params = {}
         if since is not None:
-            param += f"since={since}"
+            params['since']=since.strftime("%Y-%m-%d")
         if until is not None:
-            if len(param) > 0:
-                param += "&"
-            param += f"until={until}"
+            params['until']=until.strftime("%Y-%m-%d")
 
-        if len(param) > 0:
-            url += "?"
-            url += param
+        if not any(params):
+            params = None
             
-        result = requests.get(url=url)
-        return result.json()["messages"]
+        return requests.get(url=f"{self.url}/histories/{user_id}",params=params).json()["messages"]
 
-    def get_archived_histories(self, user_id: str) -> list:
-        return requests.get(f"{self.url}/archives/{user_id}").json()["archives"]
+    def get_archived_histories(self, user_id: str,
+                                since: typing.Optional[datetime.date]=None,
+                                until: typing.Optional[datetime.date]=None) -> list:
+        params = {}
+        if since is not None:
+            params['since']=since.strftime("%Y-%m-%d")
+        if until is not None:
+            params['until']=until.strftime("%Y-%m-%d")
+
+        if not any(params):
+            params = None
+
+        return requests.get(url=f"{self.url}/archives/{user_id}",params=params).json()["archives"]
 
     def get_archived_histories_content(self, user_id: str) -> str:
         archives = self.get_archived_histories(user_id)
