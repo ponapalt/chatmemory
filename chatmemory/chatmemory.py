@@ -244,12 +244,28 @@ class ChatMemory:
         ]
         session.bulk_save_objects(histories)
 
-    def get_histories(self, session: Session, user_id: str, since: datetime=None, until: datetime=None, password: str=None) -> list:
+    def get_histories(self, session: Session, user_id: str, since: datetime=None, until: datetime=None, password: str=None, history_min: int=0) -> list:
         histories = session.query(History).filter(
             History.user_id == user_id,
             History.timestamp >= (since or datetime.min),
             History.timestamp <= (until or datetime.max)
         ).order_by(History.id).limit(self.history_max_count).all()
+
+        if history_min > 0:
+            # 取得した履歴が最低限の行数を満たしているか確認
+            if len(histories) < history_min:
+                # 追加の履歴を取得
+                additional_histories = session.query(History).filter(
+                    History.user_id == user_id,
+                    History.timestamp < (since or datetime.min)
+                ).order_by(History.timestamp.desc()).limit(history_min - len(histories)).all()
+
+                # 追加の履歴を逆順にして結合
+                additional_histories.reverse()
+                histories = additional_histories + histories
+
+                # 必要な行数まで履歴を切り取る
+                histories = histories[:history_min]
 
         return [{"role": h.role, "content": self.decrypt(h.content, password)} for h in histories]
 
@@ -259,11 +275,12 @@ class ChatMemory:
     def archive_histories(self, session: Session, user_id: str, target_date: date, password: str=None):
         since_dt = self.date_to_utc_datetime(target_date)
         conversation_history = self.get_histories(
-            session,
-            user_id,
-            since_dt,
-            since_dt + timedelta(days=1),
-            password
+            session=session,
+            user_id=user_id,
+            since=since_dt,
+            until=since_dt + timedelta(days=1),
+            password=password,
+            history_min=10
         )
 
         if len(conversation_history) == 0:
