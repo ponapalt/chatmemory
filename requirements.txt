@@ -1,6 +1,6 @@
 fastapi==0.110.2
 openai==1.23.2
-requests==2.31.0
+requests==2.32.3
 SQLAlchemy==2.0.29
 uvicorn==0.29.0
 pycryptodome==3.20.0
