@@ -184,17 +184,18 @@ class EntityExtractor:
                     for item in json_data:
                         # 'name' と 'value' キーを持つ辞書を {key: value} 形式に変換
                         if 'name' in item and 'value' in item:
-                            keyword[item['name']] = item['value']
+                            keyword[item['name']] = str(item['value']) if item['value'] is not None else None
                         # すでに {key: value} 形式の場合はそのまま追加
                         elif len(item) == 1:
                             try:
                                 key, value = next(iter(item.items()))
-                                keyword[key] = value
+                                keyword[key] = str(value) if value is not None else None
                             except Exception as ex:
                                 logger.error(f"Invalid response form ChatGPT at archive: {item}\n{ex}\n{traceback.format_exc()}")
                             
                     keyword = {re.sub(r'[\r\n\t\s]+', ' ', key).strip() : re.sub(r'[\r\n\t\s]+', ' ', value).strip()
                                 for key, value in keyword.items() if value is not None}
+                    
                     keyword = {key: value for key, value in keyword.items() if key != "" and value != ""}
 
                     return keyword
