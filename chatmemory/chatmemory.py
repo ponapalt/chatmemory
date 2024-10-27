@@ -114,8 +114,8 @@ class HistoryArchiver:
 
 
 class EntityExtractor:
-    PROMPT_EN = "You are long-term memory extractor system from user and assistant(AI) conversation log. From the conversation history, please extract any information that should be remembered **about the user**, paying full attention from the past to the latest user logs, then output using save_entities tool. If there are already stored information, you can overwrite the new information with the same item key."
-    PROMPT_JA = "会話の履歴の中から、ユーザーに関して覚えておくべき情報があれば抽出してください。既に記憶している項目があれば、同じ項目名を使用して新しい情報で上書きします。"
+    PROMPT_EN = "You are long-term memory extractor system from user and assistant(AI) conversation log. From the conversation history, please extract any information that should be remembered **about the user**, paying particular attention to recent (last) logs, then output using save_entities tool **in Japanese, 3 words or less**. If there are already stored information, you can overwrite the new information with the same item key."
+    PROMPT_JA = "会話の履歴の中から、ユーザーに関して覚えておくべき情報があれば抽出してください。既に記憶している項目があれば、同じ項目名を使用して新しい情報で上書きします。抽出した情報は日本語で、3単語を超えないようにしてください。"
 
     def __init__(self, api_key: str, model: str="gpt-4o-mini", prompt: str=PROMPT_EN):
         self.api_key = api_key
@@ -143,12 +143,12 @@ class EntityExtractor:
                     'properties': {
                         "entities": {
                             "type": "array",
-                            "description": "An array of pairs of information to be remembered about the user. An array of name/value pairs. Multiple pairs are allowed.",
+                            "description": "An array of name/value pairs of information to be remembered about the user. Multiple pairs are allowed.",
                             "items": {
                                 "type": "object",
                                 "properties": {
                                     "name": {"type": "string", "description": "name of entity. use snake case.", "examples": ["birthday_date"]},
-                                    "value": {"type": "string"}
+                                    "value": {"type": "string", "description": "value of entity. **in Japanese, 3 words or less**"}
                                 }
                             }
                         }
