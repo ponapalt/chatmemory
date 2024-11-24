@@ -351,6 +351,10 @@ class ChatMemory:
         for k, v in new_entities.items():
             entities_json[k] = v
 
+        # valueの重複を排除してentityを圧縮する
+        reversed_entities = {v: k for k, v in entities_json.items()}
+        entities_json = {v: k for k, v in reversed_entities.items()}
+
         logger.info(f"Entities extracted : {str(new_entities)}")
         
         now = datetime.utcnow()
