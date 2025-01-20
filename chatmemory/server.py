@@ -7,6 +7,9 @@ import traceback
 from typing import List, Dict, Optional
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
+import asyncio
+from datetime import datetime, timedelta
+import json
 import uvicorn
 from .chatmemory import ChatMemory
 
@@ -65,6 +68,12 @@ class ChatMemoryServer:
 
         self.app = FastAPI(**(server_args or {"title": "ChatMemory", "version": "0.1.3"}))
         self.setup_handlers()
+        
+        # バックグラウンドタスクの設定
+        self.compression_task = None
+        self.is_compressing = False
+        self.last_compression_time = datetime.min
+        self.compression_lock = asyncio.Lock()  # 同時実行制御用のロック
 
     def get_db(self):
         db = self.session_local()
@@ -72,6 +81,144 @@ class ChatMemoryServer:
             yield db
         finally:
             db.close()
+
+    async def _compress_all_entities(self, is_scheduled: bool = False) -> None:
+        """
+        全ユーザーのエンティティを圧縮する共通処理
+        Args:
+            is_scheduled: 定期実行かどうか
+        """
+        async with self.compression_lock:  # 同時実行を防ぐ
+            if self.is_compressing:
+                logger.info("Compression task is already running")
+                return
+
+            try:
+                self.is_compressing = True
+                task_type = "scheduled" if is_scheduled else "manual"
+                logger.info(f"Starting {task_type} entity compression")
+
+                # セッションの作成
+                session = self.session_local()
+                try:
+                    # 全ユーザーIDを取得
+                    user_ids = self.chatmemory.get_all_user_ids(session)
+                    total_users = len(user_ids)
+                    compressed_users = 0
+                    
+                    # 各ユーザーの圧縮を実行
+                    for i, user_id in enumerate(user_ids, 1):
+                        try:
+                            # 圧縮前のエンティティを取得
+                            before_entities = self.chatmemory.get_entities(session, user_id)
+                            if not before_entities:
+                                continue
+
+                            # 圧縮実行
+                            try:
+                                was_compressed = self.chatmemory.compress_entities(
+                                    session=session,
+                                    user_id=user_id,
+                                    min_size=5120  # 5KB
+                                )
+                                
+                                if was_compressed:
+                                    # 圧縮後のエンティティを取得
+                                    after_entities = self.chatmemory.get_entities(session, user_id)
+                                    compressed_users += 1
+                                    logger.info(f"Progress: {i}/{total_users} users processed. Compressed user: {user_id}")
+                                    
+                                    # ログ出力
+                                    self._log_compression_result(
+                                        timestamp=datetime.utcnow(),
+                                        user_id=user_id,
+                                        before_entities=before_entities,
+                                        after_entities=after_entities
+                                    )
+
+                            except Exception as compress_ex:
+                                error_msg = f"Compression error: {str(compress_ex)}\n{traceback.format_exc()}"
+                                logger.error(f"Error compressing entities for user {user_id}: {error_msg}")
+                                
+                                # エラーログ出力
+                                self._log_compression_result(
+                                    timestamp=datetime.utcnow(),
+                                    user_id=user_id,
+                                    before_entities=before_entities,
+                                    error_message=error_msg
+                                )
+                                continue
+                                
+                        except Exception as ex:
+                            logger.error(f"Error processing user {user_id}: {ex}")
+                            continue
+
+                    logger.info(f"Completed {task_type} entity compression. {compressed_users}/{total_users} users were compressed.")
+
+                    if is_scheduled:
+                        self.last_compression_time = datetime.utcnow()
+
+                except Exception as ex:
+                    logger.error(f"Error in {task_type} compression: {ex}\n{traceback.format_exc()}")
+                finally:
+                    session.close()
+
+            finally:
+                self.is_compressing = False
+
+    async def periodic_compression_task(self):
+        """全ユーザーのエンティティを定期的に圧縮する非同期タスク"""
+        while True:
+            try:
+                # 1週間経過したかチェック
+                now = datetime.utcnow()
+                if now - self.last_compression_time < timedelta(days=7):
+                    await asyncio.sleep(3600)  # 1時間待機
+                    continue
+
+                await self._compress_all_entities(is_scheduled=True)
+
+            except Exception as ex:
+                logger.error(f"Error in compression task: {ex}\n{traceback.format_exc()}")
+            finally:
+                await asyncio.sleep(3600)  # 次の確認まで1時間待機
+
+    def _log_compression_result(self, timestamp: datetime, user_id: str, before_entities: dict, 
+                               after_entities: dict = None, error_message: str = None):
+        """圧縮結果をファイルにログ出力する"""
+        try:
+            log_entry = f"\n{'=' * 80}\n"
+            log_entry += f"Timestamp: {timestamp.isoformat()}\n"
+            log_entry += f"User ID: {user_id}\n\n"
+            
+            # 圧縮前のentity
+            log_entry += "Before Compression:\n"
+            log_entry += json.dumps(before_entities, ensure_ascii=False, indent=2)
+            log_entry += f"\nEntity Count: {len(before_entities)}"
+            log_entry += f"\nJSON Size: {len(json.dumps(before_entities, ensure_ascii=False).encode('utf-8'))} bytes\n\n"
+            
+            # エラーが発生した場合
+            if error_message:
+                log_entry += "Error occurred during compression:\n"
+                log_entry += f"{error_message}\n"
+            
+            # 圧縮後のentity（成功時のみ）
+            elif after_entities is not None:
+                log_entry += "After Compression:\n"
+                log_entry += json.dumps(after_entities, ensure_ascii=False, indent=2)
+                log_entry += f"\nEntity Count: {len(after_entities)}"
+                log_entry += f"\nJSON Size: {len(json.dumps(after_entities, ensure_ascii=False).encode('utf-8'))} bytes\n"
+                
+                # 削減率の計算
+                reduction = (1 - len(after_entities) / len(before_entities)) * 100 if len(before_entities) > 0 else 0
+                log_entry += f"Reduction Rate: {reduction:.1f}%\n"
+            
+            # ファイルに追記
+            with open("compress.txt", "a", encoding='utf-8') as f:
+                f.write(log_entry)
+                
+        except Exception as ex:
+            logger.error(f"Error writing compression log: {ex}\n{traceback.format_exc()}")
 
     def setup_handlers(self):
         app = self.app
@@ -238,6 +385,33 @@ class ChatMemoryServer:
                 logger.error(f"Error at delete_all: {ex}\n{traceback.format_exc()}")
                 return JSONResponse("Internal server error", 500)
 
+        @app.get("/maintenance/compress", response_model=ApiResponse, tags=["Maintenance"])
+        async def trigger_compression():
+            """全ユーザーのエンティティ圧縮タスクを手動で開始する"""
+            try:
+                # 非同期で圧縮タスクを開始
+                asyncio.create_task(self._compress_all_entities(is_scheduled=False))
+                return ApiResponse(message="Compression task started")
+
+            except Exception as ex:
+                logger.error(f"Error triggering compression task: {ex}\n{traceback.format_exc()}")
+                return JSONResponse("Internal server error", 500)
 
     def start(self, host :str="127.0.0.1", port: int=8123):
+        """サーバーを起動し、圧縮タスクを開始する"""
+        # バックグラウンドタスクの開始
+        @self.app.on_event("startup")
+        async def startup_event():
+            self.compression_task = asyncio.create_task(self.periodic_compression_task())
+
+        # クリーンアップ
+        @self.app.on_event("shutdown")
+        async def shutdown_event():
+            if self.compression_task:
+                self.compression_task.cancel()
+                try:
+                    await self.compression_task
+                except asyncio.CancelledError:
+                    pass
+
         uvicorn.run(self.app, host=host, port=port)
