@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, Header
 from fastapi.responses import JSONResponse
@@ -69,11 +70,12 @@ class ChatMemoryServer:
         self.app = FastAPI(**(server_args or {"title": "ChatMemory", "version": "0.1.3"}))
         self.setup_handlers()
         
-        # バックグラウンドタスクの設定
+        # バックグラウンドタスクとワーカーの設定
         self.compression_task = None
         self.is_compressing = False
         self.last_compression_time = datetime.min
         self.compression_lock = asyncio.Lock()
+        self.thread_pool = ThreadPoolExecutor(max_workers=1)
 
     def get_db(self):
         db = self.session_local()
@@ -82,13 +84,60 @@ class ChatMemoryServer:
         finally:
             db.close()
 
+    def _run_compression_in_thread(self, is_scheduled: bool = False) -> None:
+        """スレッドプール内で実行される圧縮処理"""
+        try:
+            session = self.session_local()
+            try:
+                # 全ユーザーIDを取得
+                user_ids = self.chatmemory.get_all_user_ids(session)
+                total_users = len(user_ids)
+                compressed_users = 0
+                
+                for i, user_id in enumerate(user_ids, 1):
+                    try:
+                        before_entities = self.chatmemory.get_entities(session, user_id)
+                        if not before_entities:
+                            continue
+
+                        was_compressed = self.chatmemory.compress_entities(
+                            session=session,
+                            user_id=user_id,
+                            min_size=5120
+                        )
+                        
+                        if was_compressed:
+                            after_entities = self.chatmemory.get_entities(session, user_id)
+                            compressed_users += 1
+                            logger.info(f"Progress: {i}/{total_users} users processed. Compressed user: {user_id}")
+                            
+                            self._log_compression_result(
+                                timestamp=datetime.utcnow(),
+                                user_id=user_id,
+                                before_entities=before_entities,
+                                after_entities=after_entities
+                            )
+
+                    except Exception as ex:
+                        logger.error(f"Error processing user {user_id}: {ex}")
+                        continue
+
+                logger.info(f"Compression completed. {compressed_users}/{total_users} users were compressed.")
+
+                if is_scheduled:
+                    self.last_compression_time = datetime.utcnow()
+                    
+            finally:
+                session.close()
+                
+        except Exception as ex:
+            logger.error(f"Error in compression thread: {ex}\n{traceback.format_exc()}")
+        finally:
+            self.is_compressing = False
+
     async def _compress_all_entities(self, is_scheduled: bool = False) -> None:
-        """
-        全ユーザーのエンティティを圧縮する共通処理
-        Args:
-            is_scheduled: 定期実行かどうか
-        """
-        async with self.compression_lock:  # 同時実行を防ぐ
+        """圧縮処理のメインエントリーポイント"""
+        async with self.compression_lock:
             if self.is_compressing:
                 logger.info("Compression task is already running")
                 return
@@ -98,99 +147,41 @@ class ChatMemoryServer:
                 task_type = "scheduled" if is_scheduled else "manual"
                 logger.info(f"Starting {task_type} entity compression")
 
-                # セッションの作成
-                session = self.session_local()
-                try:
-                    # 全ユーザーIDを取得
-                    user_ids = self.chatmemory.get_all_user_ids(session)
-                    total_users = len(user_ids)
-                    compressed_users = 0
-                    
-                    # 各ユーザーの圧縮を実行
-                    for i, user_id in enumerate(user_ids, 1):
-                        try:
-                            # 圧縮前のエンティティを取得
-                            before_entities = self.chatmemory.get_entities(session, user_id)
-                            if not before_entities:
-                                continue
+                # スレッドプールで圧縮処理を実行
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(
+                    self.thread_pool, 
+                    self._run_compression_in_thread,
+                    is_scheduled
+                )
 
-                            # 圧縮実行
-                            try:
-                                was_compressed = self.chatmemory.compress_entities(
-                                    session=session,
-                                    user_id=user_id,
-                                    min_size=5120  # 5KB
-                                )
-                                
-                                if was_compressed:
-                                    # 圧縮後のエンティティを取得
-                                    after_entities = self.chatmemory.get_entities(session, user_id)
-                                    compressed_users += 1
-                                    logger.info(f"Progress: {i}/{total_users} users processed. Compressed user: {user_id}")
-                                    
-                                    # ログ出力
-                                    self._log_compression_result(
-                                        timestamp=datetime.utcnow(),
-                                        user_id=user_id,
-                                        before_entities=before_entities,
-                                        after_entities=after_entities
-                                    )
-
-                            except Exception as compress_ex:
-                                error_msg = f"Compression error: {str(compress_ex)}\n{traceback.format_exc()}"
-                                logger.error(f"Error compressing entities for user {user_id}: {error_msg}")
-                                
-                                # エラーログ出力
-                                self._log_compression_result(
-                                    timestamp=datetime.utcnow(),
-                                    user_id=user_id,
-                                    before_entities=before_entities,
-                                    error_message=error_msg
-                                )
-                                continue
-                                
-                        except Exception as ex:
-                            logger.error(f"Error processing user {user_id}: {ex}")
-                            continue
-
-                    logger.info(f"Completed {task_type} entity compression. {compressed_users}/{total_users} users were compressed.")
-
-                    if is_scheduled:
-                        self.last_compression_time = datetime.utcnow()
-
-                except Exception as ex:
-                    logger.error(f"Error in {task_type} compression: {ex}\n{traceback.format_exc()}")
-                finally:
-                    session.close()
-
-            finally:
+            except Exception as ex:
+                logger.error(f"Error starting compression: {ex}\n{traceback.format_exc()}")
                 self.is_compressing = False
 
-    async def start_background_tasks(self):
-        """バックグラウンドタスクを開始する"""
-        # 圧縮タスクを非同期で開始
-        self.compression_task = asyncio.create_task(self.periodic_compression_task())
-        logger.info("Background compression task started")
-
     async def periodic_compression_task(self):
-        """全ユーザーのエンティティを定期的に圧縮する非同期タスク"""
+        """定期的な圧縮処理を行う非同期タスク"""
         while True:
             try:
-                # 1週間経過したかチェック
+                # 初回または1週間経過後に圧縮を実行
                 now = datetime.utcnow()
-                if now - self.last_compression_time < timedelta(days=7):
-                    await asyncio.sleep(3600)  # 1時間待機
-                    continue
-
-                await self._compress_all_entities(is_scheduled=True)
+                if self.last_compression_time == datetime.min or \
+                   now - self.last_compression_time >= timedelta(days=7):
+                    await self._compress_all_entities(is_scheduled=True)
+                
+                await asyncio.sleep(3600)  # 1時間ごとにチェック
 
             except asyncio.CancelledError:
-                logger.info("Compression task cancelled")
+                logger.info("Periodic compression task cancelled")
                 break
             except Exception as ex:
-                logger.error(f"Error in compression task: {ex}\n{traceback.format_exc()}")
-            finally:
-                await asyncio.sleep(3600)  # 次の確認まで1時間待機
+                logger.error(f"Error in periodic compression: {ex}\n{traceback.format_exc()}")
+                await asyncio.sleep(3600)
+
+    async def start_background_tasks(self):
+        """バックグラウンドタスクを開始"""
+        self.compression_task = asyncio.create_task(self.periodic_compression_task())
+        logger.info("Background compression task started")
 
     def _log_compression_result(self, timestamp: datetime, user_id: str, before_entities: dict, 
                                after_entities: dict = None, error_message: str = None):
@@ -234,7 +225,6 @@ class ChatMemoryServer:
 
         @app.on_event("startup")
         async def startup_event():
-            # バックグラウンドタスクを非同期で開始
             await self.start_background_tasks()
 
         @app.on_event("shutdown")
@@ -245,6 +235,8 @@ class ChatMemoryServer:
                     await self.compression_task
                 except asyncio.CancelledError:
                     pass
+            
+            self.thread_pool.shutdown(wait=True)
 
         @app.get("/ping", response_model=ApiResponse, tags=["Ping"])
         async def ping():
