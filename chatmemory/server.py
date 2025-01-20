@@ -73,7 +73,7 @@ class ChatMemoryServer:
         self.compression_task = None
         self.is_compressing = False
         self.last_compression_time = datetime.min
-        self.compression_lock = asyncio.Lock()  # 同時実行制御用のロック
+        self.compression_lock = asyncio.Lock()
 
     def get_db(self):
         db = self.session_local()
@@ -166,6 +166,12 @@ class ChatMemoryServer:
             finally:
                 self.is_compressing = False
 
+    async def start_background_tasks(self):
+        """バックグラウンドタスクを開始する"""
+        # 圧縮タスクを非同期で開始
+        self.compression_task = asyncio.create_task(self.periodic_compression_task())
+        logger.info("Background compression task started")
+
     async def periodic_compression_task(self):
         """全ユーザーのエンティティを定期的に圧縮する非同期タスク"""
         while True:
@@ -178,6 +184,9 @@ class ChatMemoryServer:
 
                 await self._compress_all_entities(is_scheduled=True)
 
+            except asyncio.CancelledError:
+                logger.info("Compression task cancelled")
+                break
             except Exception as ex:
                 logger.error(f"Error in compression task: {ex}\n{traceback.format_exc()}")
             finally:
@@ -222,6 +231,20 @@ class ChatMemoryServer:
 
     def setup_handlers(self):
         app = self.app
+
+        @app.on_event("startup")
+        async def startup_event():
+            # バックグラウンドタスクを非同期で開始
+            await self.start_background_tasks()
+
+        @app.on_event("shutdown")
+        async def shutdown_event():
+            if self.compression_task:
+                self.compression_task.cancel()
+                try:
+                    await self.compression_task
+                except asyncio.CancelledError:
+                    pass
 
         @app.get("/ping", response_model=ApiResponse, tags=["Ping"])
         async def ping():
@@ -397,21 +420,6 @@ class ChatMemoryServer:
                 logger.error(f"Error triggering compression task: {ex}\n{traceback.format_exc()}")
                 return JSONResponse("Internal server error", 500)
 
-    def start(self, host :str="127.0.0.1", port: int=8123):
-        """サーバーを起動し、圧縮タスクを開始する"""
-        # バックグラウンドタスクの開始
-        @self.app.on_event("startup")
-        async def startup_event():
-            self.compression_task = asyncio.create_task(self.periodic_compression_task())
-
-        # クリーンアップ
-        @self.app.on_event("shutdown")
-        async def shutdown_event():
-            if self.compression_task:
-                self.compression_task.cancel()
-                try:
-                    await self.compression_task
-                except asyncio.CancelledError:
-                    pass
-
+    def start(self, host: str = "127.0.0.1", port: int = 8123):
+        """サーバーを起動する"""
         uvicorn.run(self.app, host=host, port=port)
