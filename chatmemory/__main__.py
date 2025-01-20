@@ -21,7 +21,9 @@ def main():
     argparser.add_argument("--port", dest="port", default=8123, type=int, help="Port numbert to listen. Default is 8123")
     args = argparser.parse_args()
 
-    api_key = args.api_key or os.environ.get("OPENAI_APIKEY")
+    api_key = args.api_key or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        api_key = args.api_key or os.environ.get("OPENAI_APIKEY")
     if not api_key:
         logger.error("OpenAI API Key is missing")
         return
