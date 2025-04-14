@@ -52,7 +52,7 @@ class HistoryArchiver:
     PROMPT_EN = "You are summarizing system from user and assistant(AI) conversation log. Please summarize the content of the following conversation in the original language of the content(e.g. content in Japanese should be summarize in Japanese), in about {archive_length} words, paying attention to the topics discussed. Write the summary in third-person perspective, with 'user' and 'assistant' as the subjects.\n\n{histories_text}"
     PROMPT_JA = "以下の会話の内容を、話題等に注目して{archive_length}文字以内程度の日本語で要約してください。要約した文章は第三者視点で、主語はuserとasssitantとします。\n\n{histories_text}"
 
-    def __init__(self, api_key: str, model: str="gpt-4o-mini", archive_length: int=100, prompt: str=PROMPT_EN):
+    def __init__(self, api_key: str, model: str="gpt-4.1-mini", archive_length: int=100, prompt: str=PROMPT_EN):
         self.api_key = api_key
         self.model = model
         self.archive_length = archive_length
@@ -117,7 +117,7 @@ class EntityExtractor:
     PROMPT_EN = "You are long-term memory extractor system from user and assistant(AI) conversation log. From the conversation history, please extract any information that should be remembered **about the user**, paying particular attention to recent (last) logs, then output using save_entities tool **in Japanese, 3 words or less**. If there are already stored information, you can overwrite the new information with the same item key."
     PROMPT_JA = "会話の履歴の中から、ユーザーに関して覚えておくべき情報があれば抽出してください。既に記憶している項目があれば、同じ項目名を使用して新しい情報で上書きします。抽出した情報は日本語で、3単語を超えないようにしてください。"
 
-    def __init__(self, api_key: str, model: str="gpt-4o-mini", prompt: str=PROMPT_EN):
+    def __init__(self, api_key: str, model: str="gpt-4.1-mini", prompt: str=PROMPT_EN):
         self.api_key = api_key
         self.model = model
         self.extract_prompt = prompt
@@ -236,7 +236,7 @@ class EntityCompressor:
 それでは、JSONの出力を開始してください:
 """
 
-    def __init__(self, api_key: str, model: str="gpt-4o-mini"):
+    def __init__(self, api_key: str, model: str="gpt-4.1-mini"):
         self.api_key = api_key
         self.model = model
 
@@ -317,7 +317,7 @@ class EntityCompressor:
 
 # Memory manager
 class ChatMemory:
-    def __init__(self, api_key: str=None, model: str="gpt-4o-mini", history_archiver: HistoryArchiver=None, entity_extractor: EntityExtractor=None):
+    def __init__(self, api_key: str=None, model: str="gpt-4.1-mini", history_archiver: HistoryArchiver=None, entity_extractor: EntityExtractor=None):
         self.history_archiver = history_archiver or HistoryArchiver(api_key, model)
         self.entity_extractor = entity_extractor or EntityExtractor(api_key, model)
         self.history_max_count = 100
