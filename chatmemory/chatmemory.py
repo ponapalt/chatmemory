@@ -52,7 +52,7 @@ class HistoryArchiver:
     PROMPT_EN = "You are summarizing system from user and assistant(AI) conversation log. Please summarize the content of the following conversation in the original language of the content(e.g. content in Japanese should be summarize in Japanese), in about {archive_length} words, paying attention to the topics discussed. Write the summary in third-person perspective, with 'user' and 'assistant' as the subjects.\n\n{histories_text}"
     PROMPT_JA = "以下の会話の内容を、話題等に注目して{archive_length}文字以内程度の日本語で要約してください。要約した文章は第三者視点で、主語はuserとasssitantとします。\n\n{histories_text}"
 
-    def __init__(self, api_key: str, model: str="gpt-4.1-mini", archive_length: int=100, prompt: str=PROMPT_EN):
+    def __init__(self, api_key: str, model: str="gpt-4.1-nano", archive_length: int=100, prompt: str=PROMPT_EN):
         self.api_key = api_key
         self.model = model
         self.archive_length = archive_length
@@ -317,7 +317,7 @@ class EntityCompressor:
 
 # Memory manager
 class ChatMemory:
-    def __init__(self, api_key: str=None, model: str="gpt-4.1-mini", history_archiver: HistoryArchiver=None, entity_extractor: EntityExtractor=None):
+    def __init__(self, api_key: str=None, model: str="gpt-4.1-nano", history_archiver: HistoryArchiver=None, entity_extractor: EntityExtractor=None):
         self.history_archiver = history_archiver or HistoryArchiver(api_key, model)
         self.entity_extractor = entity_extractor or EntityExtractor(api_key, model)
         self.history_max_count = 100
