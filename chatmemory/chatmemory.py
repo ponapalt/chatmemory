@@ -114,8 +114,8 @@ class HistoryArchiver:
 
 
 class EntityExtractor:
-    PROMPT_EN = "You are long-term memory extractor system from user and assistant(AI) conversation log. From the conversation history, please extract any information that should be remembered **about the user**, paying particular attention to recent (last) logs, then output using save_entities tool **in Japanese, 3 words or less**. If there are already stored information, you can overwrite the new information with the same item key."
-    PROMPT_JA = "会話の履歴の中から、ユーザーに関して覚えておくべき情報があれば抽出してください。既に記憶している項目があれば、同じ項目名を使用して新しい情報で上書きします。抽出した情報は日本語で、3単語を超えないようにしてください。"
+    PROMPT_EN = "You are long-term memory extractor system from user and assistant(AI) conversation log. From the conversation history, please extract any information that should be remembered **about the user**, paying particular attention to recent (last) logs, then output using save_entities tool **in Japanese, 3 words or less**. If there are already stored information, you can overwrite the new information with the same item key. If you want to forget entity, set \"value\" field to zero length string : \"\"."
+    PROMPT_JA = "会話の履歴の中から、ユーザーに関して覚えておくべき情報があれば抽出してください。既に記憶している項目があれば、同じ項目名を使用して新しい情報で上書きします。抽出した情報は日本語で、3単語を超えないようにしてください。忘れたい情報があれば、valueフィールドを0文字の文字列定数としてください : \"\""
 
     def __init__(self, api_key: str, model: str="gpt-4.1-nano", prompt: str=PROMPT_EN):
         self.api_key = api_key
@@ -148,7 +148,7 @@ class EntityExtractor:
                                 "type": "object",
                                 "properties": {
                                     "name": {"type": "string", "description": "name of entity. use snake case.", "examples": ["birthday_date"]},
-                                    "value": {"type": "string", "description": "value of entity. **in Japanese, 3 words or less**"}
+                                    "value": {"type": "string", "description": "value of entity. **in Japanese, 3 words or less**. Set zero length string (\"\") when you want to forgot entity."}
                                 }
                             }
                         }
@@ -184,19 +184,20 @@ class EntityExtractor:
                     for item in json_data:
                         # 'name' と 'value' キーを持つ辞書を {key: value} 形式に変換
                         if 'name' in item and 'value' in item:
-                            keyword[item['name']] = str(item['value']) if item['value'] is not None else None
+                            keyword[item['name']] = "" if item['value'] is None else str(item['value'])
                         # すでに {key: value} 形式の場合はそのまま追加
                         elif len(item) == 1:
                             try:
                                 key, value = next(iter(item.items()))
-                                keyword[key] = str(value) if value is not None else None
+                                keyword[key] = "" if value is None else str(value)
                             except Exception as ex:
                                 logger.error(f"Invalid response form ChatGPT at archive: {item}\n{ex}\n{traceback.format_exc()}")
                             
                     keyword = {re.sub(r'[\r\n\t\s]+', ' ', key).strip() : re.sub(r'[\r\n\t\s]+', ' ', value).strip()
-                                for key, value in keyword.items() if value is not None}
-                    
-                    keyword = {key: value for key, value in keyword.items() if key != "" and value != ""}
+                                for key, value in keyword.items()}
+
+                    # 空の値でないエンティティのみフィルタリング（空の値は削除マークとして扱う）
+                    keyword = {key: value for key, value in keyword.items() if key != ""}
 
                     return keyword
 
@@ -459,7 +460,12 @@ class ChatMemory:
 
         new_entities = self.entity_extractor.extract(conversation_history, entities_json)
         for k, v in new_entities.items():
-            entities_json[k] = v
+            if v == "":
+                # 空文字列の場合は削除マークとして扱い、既存のエンティティから削除
+                entities_json.pop(k, None)
+            else:
+                # 通常の場合は更新/追加
+                entities_json[k] = v
 
         # valueの重複を排除してentityを圧縮する
         reversed_entities = {v: k for k, v in entities_json.items()}
