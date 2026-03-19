@@ -9,23 +9,28 @@ from chatmemory.chatmemory import Base, ChatMemory, History, Archive, Entity
 engine = create_engine("sqlite:///:memory:")
 SessionLocal = sessionmaker(bind=engine)
 
-serialized_arguments = json.dumps({
-    "entities": [
-        {"name": "nickname", "value": "John"}
-    ],
+serialized_archive_arguments = json.dumps({
     "summarized_text": "user asked a question and assistant replied."
 })
-mocked_response = {
-    "choices": [
-        {
-            "message": {
-                "function_call": {
-                    "arguments": serialized_arguments
-                }
-            }
-        }
+serialized_entity_arguments = json.dumps({
+    "entities": [
+        {"name": "nickname", "value": "John"}
     ]
-}
+})
+
+# Responses API形式のmockレスポンス
+def make_mock_response(arguments, name="save_summarized_histories"):
+    mock_item = MagicMock()
+    mock_item.type = "function_call"
+    mock_item.name = name
+    mock_item.arguments = arguments
+    mock_resp = MagicMock()
+    mock_resp.output = [mock_item]
+    mock_resp.output_text = ""
+    return mock_resp
+
+mocked_archive_response = make_mock_response(serialized_archive_arguments, "save_summarized_histories")
+mocked_entity_response = make_mock_response(serialized_entity_arguments, "save_entities")
 
 test_messages = [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi there!"}]
 
@@ -39,8 +44,10 @@ def db_session():
     Base.metadata.drop_all(bind=engine)
 
 
-@patch("openai.resources.chat.Completions.create", return_value=mocked_response)
+@patch("openai.resources.responses.Responses.create")
 def test_chat_memory(mocked_create, db_session):
+    # archive呼び出し時とentity呼び出し時で異なるレスポンスを返す
+    mocked_create.side_effect = [mocked_archive_response, mocked_entity_response]
     chat_memory = ChatMemory(api_key="fake_key")
 
     # add_histories
@@ -63,7 +70,7 @@ def test_chat_memory(mocked_create, db_session):
     assert entities["nickname"] == "John"
 
     # delete
-    chat_memory.delete(db_session, user_id)
+    chat_memory.delete_all(db_session, user_id)
     assert db_session.query(History).filter_by(user_id=user_id).count() == 0
     assert db_session.query(Archive).filter_by(user_id=user_id).count() == 0
     assert db_session.query(Entity).filter_by(user_id=user_id).count() == 0

@@ -69,42 +69,39 @@ class HistoryArchiver:
         ]
         tools = [{
             'type': 'function',
-            'function': {
-                'name': 'save_summarized_histories',
-                'description': 'Summarize the content of the conversation.',
-                'parameters': {
-                    'type': 'object',
-                    'properties': {
-                        'summarized_text': {
-                            'type': 'string',
-                            'description': '要約した会話の内容'
-                        }
-                    },
-                    'required': ['summarized_text']
-                }
+            'name': 'save_summarized_histories',
+            'description': 'Summarize the content of the conversation.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'summarized_text': {
+                        'type': 'string',
+                        'description': '要約した会話の内容'
+                    }
+                },
+                'required': ['summarized_text']
             }
         }]
 
         client = OpenAI(api_key=self.api_key)
 
-        parameters = {
-            'messages': histories,
-            'model':self.model,
-            'reasoning_effort':'low',
-            'tools':tools,
-            'tool_choice':{'type': 'function', 'function': {'name': 'save_summarized_histories'}},
-        }
-        resp = client.chat.completions.create(**parameters)
-        tool_calls = resp.choices[0].message.tool_calls
+        resp = client.responses.create(
+            input=histories,
+            model=self.model,
+            reasoning={'effort': 'low'},
+            tools=tools,
+            tool_choice={'type': 'function', 'name': 'save_summarized_histories'},
+        )
+        tool_calls = [item for item in resp.output if item.type == 'function_call']
 
         if tool_calls:
             for tool_call in tool_calls:
                 try:
-                    return json.loads(tool_call.function.arguments)['summarized_text']
+                    return json.loads(tool_call.arguments)['summarized_text']
 
                 except json.decoder.JSONDecodeError:
-                    logger.warning(f"Retry parsing JSON: {tool_call.function.arguments}")
-                    jstr = tool_call.function.arguments.replace("\",\n}", "\"\n}")
+                    logger.warning(f"Retry parsing JSON: {tool_call.arguments}")
+                    jstr = tool_call.arguments.replace("\",\n}", "\"\n}")
                     return json.loads(jstr)["summarized_text"]
 
                 except Exception as ex:
@@ -134,46 +131,42 @@ class EntityExtractor:
 
         tools = [{
             'type': 'function',
-            'function': {
-                'name': 'save_entities',
-                'description': 'Extract and save any information that should be remembered about the user.',
-                'parameters': {
-                    'type': 'object',
-                    'properties': {
-                        "entities": {
-                            "type": "array",
-                            "description": "An array of name/value pairs of information to be remembered about the user. Multiple pairs are allowed.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "name": {"type": "string", "description": "name of entity. use snake case.", "examples": ["birthday_date"]},
-                                    "value": {"type": "string", "description": "value of entity. **in Japanese, 3 words or less**. Set zero length string (\"\") when you want to forgot entity."}
-                                }
+            'name': 'save_entities',
+            'description': 'Extract and save any information that should be remembered about the user.',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    "entities": {
+                        "type": "array",
+                        "description": "An array of name/value pairs of information to be remembered about the user. Multiple pairs are allowed.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "name": {"type": "string", "description": "name of entity. use snake case.", "examples": ["birthday_date"]},
+                                "value": {"type": "string", "description": "value of entity. **in Japanese, 3 words or less**. Set zero length string (\"\") when you want to forgot entity."}
                             }
                         }
-                    },
-                    'required': ['entities']
-                }
+                    }
+                },
+                'required': ['entities']
             }
         }]
 
         client = OpenAI(api_key=self.api_key)
 
-        parameters = {
-            'messages': histories,
-            'model':self.model,
-            'reasoning_effort':'low',
-            'tools':tools,
-            'tool_choice':{'type': 'function', 'function': {'name': 'save_entities'}},
-        }
-
-        resp = client.chat.completions.create(**parameters)
-        tool_calls = resp.choices[0].message.tool_calls
+        resp = client.responses.create(
+            input=histories,
+            model=self.model,
+            reasoning={'effort': 'low'},
+            tools=tools,
+            tool_choice={'type': 'function', 'name': 'save_entities'},
+        )
+        tool_calls = [item for item in resp.output if item.type == 'function_call']
 
         if tool_calls:
             for tool_call in tool_calls:
                 try:
-                    json_data = json.loads(tool_call.function.arguments)
+                    json_data = json.loads(tool_call.arguments)
                     keyword = {}
 
                     if 'entities' in json_data:
@@ -279,13 +272,13 @@ class EntityCompressor:
 
         for attempt in range(max_retries):
             try:
-                response = client.chat.completions.create(
+                response = client.responses.create(
                     model=self.model,
-                    messages=messages,
-                    reasoning_effort='low'
+                    input=messages,
+                    reasoning={'effort': 'low'}
                 )
-                
-                compressed_text = response.choices[0].message.content
+
+                compressed_text = response.output_text
                 compressed_entities, error_message = self._attempt_json_parse(compressed_text)
                 
                 if compressed_entities is not None:
